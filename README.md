@@ -238,4 +238,4 @@ uv run pytest -v
 
 This repository is both a practical learning project and an exploration of production-oriented AI application engineering.
 
-Features will be documented as they are implemented and tested.is this all true for this or needs editing
+Features will be documented as they are implemented and tested.
