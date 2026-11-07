@@ -91,41 +91,45 @@ Observability components will collect information throughout the request lifecyc
 
 The project will gradually follow a modular structure:
 
+## Project Structure
+
 ```text
 production-rag-api/
 │
 ├── app/
-│   ├── api/
-│   ├── core/
-│   ├── services/
-│   ├── rag/
-│   ├── middleware/
-│   └── monitoring/
+│   ├── __init__.py
+│   ├── main.py          # FastAPI app: /chat, /health, /metrics, /cache/stats
+│   ├── config.py        # Settings loaded from environment variables
+│   ├── models.py        # Pydantic request/response schemas
+│   ├── security.py      # Prompt-injection checks, PII masking, output validation
+│   ├── cache.py         # In-memory response cache with TTL
+│   ├── monitoring.py    # JSON logging, metrics collector, request timer
+│   └── agent.py         # LangGraph agent with retry and model fallback
 │
 ├── tests/
+│   ├── __init__.py
+│   ├── test_security.py
+│   ├── test_cache.py
+│   └── test_api.py
 │
-├── docs/
-│
-├── .env.example
+├── .dockerignore
+├── .env.example         # Placeholder environment variables
 ├── .gitignore
-├── Dockerfile
 ├── docker-compose.yml
+├── Dockerfile
 ├── pyproject.toml
 ├── uv.lock
 └── README.md
 ```
-
 ## Getting Started
 
 ### Prerequisites
 
-Install the following:
-
-- Python
-- uv
-- Ollama
-- Docker
-- PostgreSQL with the pgvector extension
+- Python 3.12
+- [uv](https://docs.astral.sh/uv/)
+- [Ollama](https://ollama.com/)
+- A PostgreSQL database with the pgvector extension (for example, a free Supabase project)
+- Docker (optional, for containerized runs)
 
 ### Clone the repository
 
@@ -134,104 +138,99 @@ git clone <your-repository-url>
 cd production-rag-api
 ```
 
-### Create the virtual environment
-
-```bash
-uv venv
-source .venv/bin/activate
-```
-
 ### Install dependencies
 
 ```bash
-uv add langchain-ollama langgraph langsmith fastapi uvicorn slowapi pydantic-settings python-dotenv
+uv sync
 ```
+
+This creates `.venv` and installs the exact versions from `uv.lock`.
 
 ### Configure environment variables
 
-Create a `.env` file in the project root.
-
-Example:
-
-```env
-APP_NAME=Production RAG API
-APP_ENV=development
-DATABASE_URL=postgresql://postgres:password@localhost:5432/ragdb
-OLLAMA_BASE_URL=http://localhost:11434
-CHAT_MODEL=llama3.2:3b
-EMBEDDING_MODEL=nomic-embed-text
-```
-
-Adjust the database credentials and model names according to your environment.
-
-### Start Ollama
+Copy the example file and fill in your values:
 
 ```bash
-ollama serve
+cp .env.example .env
 ```
 
-Pull the required models:
+| Variable | Purpose | Example |
+|---|---|---|
+| `APP_ENV` | Environment name | `development` |
+| `LOG_LEVEL` | Logging verbosity | `info` |
+| `API_KEYS` | Keys clients use to call this API | generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
+| `RATE_LIMIT` | Requests per client | `20/minute` |
+| `MAX_RETRIES` | Retry limit before fallback or error | `3` |
+| `SUPABASE_DATABASE_URL` | Postgres connection (use the Session pooler string) | `postgresql+psycopg://postgres.<ref>:<password>@<host>:5432/postgres` |
+| `OLLAMA_BASE_URL` | Where Ollama listens | `http://localhost:11434` |
+| `PRIMARY_MODEL` | Main chat model | `llama3.1:8b` |
+| `FALLBACK_MODEL` | Backup chat model | `llama3.2:3b` |
+| `EMBEDDING_MODEL` | Embedding model | `nomic-embed-text` |
+| `LLM_TIMEOUT_SECONDS` | Wait time before fallback | `30` |
+| `CACHE_TTL_SECONDS` | How long cached answers live | `3600` |
+| `LANGSMITH_TRACING` | Enable tracing | `true` |
+| `LANGSMITH_API_KEY` | LangSmith key (optional) | |
+| `LANGSMITH_PROJECT` | LangSmith project name | `production-rag` |
+
+### Start Ollama and pull the models
+
+Check that Ollama is running (`ollama list`). If it isn't, start it with `ollama serve`.
 
 ```bash
+ollama pull llama3.1:8b
 ollama pull llama3.2:3b
 ollama pull nomic-embed-text
 ```
 
-### Run the API
+### Run the API locally
 
 ```bash
 uv run uvicorn app.main:app --reload
 ```
 
-The API will be available at:
+- API: `http://localhost:8000`
+- Interactive docs: `http://localhost:8000/docs`
+- Health check: `http://localhost:8000/health`
 
-```text
-http://localhost:8000
+### Run with Docker
+
+```bash
+docker compose up -d --build
+curl http://localhost:8000/health
 ```
 
-Interactive API documentation:
+The container reaches Ollama on your machine through `host.docker.internal`, so Ollama must listen on all interfaces (`OLLAMA_HOST=0.0.0.0`).
 
-```text
-http://localhost:8000/docs
+### Run the tests
+
+```bash
+uv run pytest -v
 ```
-
-*The commands and module paths will be updated as the application structure is implemented.*
 
 ## Development Roadmap
 
-The project will be developed incrementally.
-
-- [ ] Initialize FastAPI application.
-- [ ] Implement application configuration.
-- [ ] Integrate Ollama chat and embedding models.
+- [x] Initialize FastAPI application.
+- [x] Implement application configuration.
+- [x] Integrate Ollama chat models with fallback.
 - [ ] Implement document ingestion and chunking.
 - [ ] Integrate PostgreSQL and pgvector.
 - [ ] Implement semantic retrieval.
 - [ ] Build the RAG generation pipeline.
-- [ ] Add request tracing with metadata.
-- [ ] Implement prompt-injection protection.
-- [ ] Implement PII detection and redaction.
-- [ ] Add exponential backoff and model fallbacks.
-- [ ] Implement in-memory caching.
-- [ ] Add IP-based rate limiting.
-- [ ] Implement structured JSON logging.
-- [ ] Collect request, latency, and token metrics.
-- [ ] Implement health-check endpoints.
-- [ ] Write automated tests.
-- [ ] Containerize the application with Docker.
+- [x] Add request tracing (LangSmith).
+- [x] Implement prompt-injection protection.
+- [x] Implement PII detection and redaction.
+- [ ] Add exponential backoff between retries.
+- [x] Implement in-memory caching.
+- [x] Add IP-based rate limiting.
+- [x] Implement structured JSON logging.
+- [x] Collect request, latency, and token metrics.
+- [x] Implement health-check endpoints.
+- [ ] Add API key authentication to `/chat`.
+- [ ] Complete automated tests (security done, cache and API in progress).
+- [x] Containerize the application with Docker.
 - [ ] Test the complete deployment.
 
-## Learning Objectives
 
-Beyond implementing the application, this project focuses on understanding:
-
-- How RAG systems work internally.
-- How vector databases perform similarity searches.
-- How to design reliable LLM-powered APIs.
-- How to handle model failures and external dependencies.
-- How to protect sensitive information.
-- How to monitor and debug production applications.
-- How to deploy AI applications using containers.
 
 ## Project Status
 
@@ -239,4 +238,4 @@ Beyond implementing the application, this project focuses on understanding:
 
 This repository is both a practical learning project and an exploration of production-oriented AI application engineering.
 
-Features will be documented as they are implemented and tested.
+Features will be documented as they are implemented and tested.is this all true for this or needs editing
